@@ -1,8 +1,9 @@
 import './styles/main.scss';
 
+const NOMBRE_JUEGO = "memoria-juego"; // Nombre único para la clave en localStorage
 const cajas = document.querySelectorAll('div.totalCajas div');
 
-// Crear el temporizador
+// Temporizador
 const timerDiv = document.createElement('div');
 timerDiv.style.position = 'fixed';
 timerDiv.style.top = '20px';
@@ -13,22 +14,29 @@ timerDiv.style.padding = '10px 20px';
 timerDiv.style.fontSize = '22px';
 timerDiv.style.borderRadius = '10px';
 timerDiv.style.zIndex = '1000';
-timerDiv.textContent = 'Tiempo: 00:00';
 document.body.appendChild(timerDiv);
 
-// Variables del temporizador
 let segundosTranscurridos = 0;
 let temporizadorActivo = false;
 let intervalo = null;
 
-// Función para actualizar el temporizador visual
+// Leer o inicializar datos del juego
+function leerEstadoJuego() {
+    const datos = localStorage.getItem(NOMBRE_JUEGO);
+    return datos ? JSON.parse(datos) : null;
+}
+
+function guardarEstadoJuego(estado) {
+    localStorage.setItem(NOMBRE_JUEGO, JSON.stringify(estado));
+}
+
 function mostrarTiempo() {
     const minutos = String(Math.floor(segundosTranscurridos / 60)).padStart(2, '0');
     const segundos = String(segundosTranscurridos % 60).padStart(2, '0');
     timerDiv.textContent = `Tiempo: ${minutos}:${segundos}`;
 }
 
-// Generar 15 colores aleatorios
+// Generar colores aleatorios si no existen en la carga previa
 function generarColoresAleatorios(num) {
     const colores = [];
     for (let i = 0; i < num; i++) {
@@ -40,40 +48,56 @@ function generarColoresAleatorios(num) {
     return colores;
 }
 
-// Asignar colores a las cajas
-function asignarColoresCajas(cajas, colores) {
-    for (let i = 0; i < cajas.length; i++) {
-        cajas[i].dataset.color = colores[i];
-        cajas[i].style.backgroundColor = 'black';
+function prepararColores(numCajas, numColores, coloresPrevios) {
+    if (coloresPrevios && coloresPrevios.length === numCajas) {
+        return coloresPrevios;
     }
-}
-
-// Mezclar colores y duplicarlos para generar parejas
-function prepararColores(numCajas, numColores) {
     let colores = generarColoresAleatorios(numColores);
     colores = [...colores, ...colores];
     colores = colores.sort(() => Math.random() - 0.5);
     return colores;
 }
 
-// Lógica principal del juego
-function manejadorClicks() {
+function asignarColoresCajas(cajas, colores, parejasEncontradas = []) {
+    for (let i = 0; i < cajas.length; i++) {
+        cajas[i].dataset.color = colores[i];
+        cajas[i].style.backgroundColor = 'black';
+    }
+    // Mostrar pares encontrados
+    for (let idx of parejasEncontradas) {
+        cajas[idx].style.backgroundColor = cajas[idx].dataset.color;
+    }
+}
+
+// Lógica con persistencia
+function manejadorClickFactory(cajas, colores, estado, totalParejas) {
     let seleccionadas = [];
-    let parejasEncontradas = [];
+    let parejasEncontradas = estado ? estado.parejasEncontradas : [];
     let bloqueo = false;
-    const totalParejas = cajas.length / 2;
-    let primerClickHecho = false;
+    let primerClickHecho = estado ? estado.primerClickHecho : false;
 
     function finalizarJuego() {
         temporizadorActivo = false;
         clearInterval(intervalo);
-        timerDiv.textContent += ' ¡Enhorabuena! Puzzle completado.';
+        timerDiv.textContent += '   ¡Enhorabuena! Puzzle completado.';
+        // Limpia el estado para próxima partida si lo deseas:
+        // localStorage.removeItem(NOMBRE_JUEGO);
+    }
+
+    function actualizarEstadoLocalStorage(extra = {}) {
+        guardarEstadoJuego({
+            colores,
+            parejasEncontradas,
+            segundosTranscurridos,
+            primerClickHecho,
+            ...extra
+        });
     }
 
     return function(event) {
         if (bloqueo) return;
 
-        // Iniciar temporizador en el primer click 
+        // Iniciar el temporizador en el primer click
         if (!primerClickHecho) {
             primerClickHecho = true;
             temporizadorActivo = true;
@@ -81,32 +105,40 @@ function manejadorClicks() {
                 if (temporizadorActivo) {
                     segundosTranscurridos += 1;
                     mostrarTiempo();
+                    actualizarEstadoLocalStorage();
                 }
             }, 1000);
+            actualizarEstadoLocalStorage();
         }
 
         const caja = event.target;
-        if (seleccionadas.length < 2 && !parejasEncontradas.includes(caja)) {
+        const idx = Array.from(cajas).indexOf(caja);
+
+        // No permitir volver a seleccionar pareja encontrada ni triple clic
+        if (seleccionadas.length < 2 && !parejasEncontradas.includes(idx)) {
             caja.style.backgroundColor = caja.dataset.color;
-            seleccionadas.push(caja);
+            seleccionadas.push({element: caja, idx});
 
             if (seleccionadas.length === 2) {
-                const [caja1, caja2] = seleccionadas;
-                if (caja1.dataset.color === caja2.dataset.color) {
-                    parejasEncontradas.push(caja1, caja2);
+                const [obj1, obj2] = seleccionadas;
+                if (obj1.element.dataset.color === obj2.element.dataset.color) {
+                    parejasEncontradas.push(obj1.idx, obj2.idx);
                     seleccionadas = [];
+                    actualizarEstadoLocalStorage();
 
                     if (parejasEncontradas.length === totalParejas * 2) {
                         finalizarJuego();
+                        actualizarEstadoLocalStorage({completado: true});
                     }
                 } else {
                     bloqueo = true;
                     setTimeout(() => {
-                        caja1.style.backgroundColor = 'black';
-                        caja2.style.backgroundColor = 'black';
+                        obj1.element.style.backgroundColor = 'black';
+                        obj2.element.style.backgroundColor = 'black';
                         seleccionadas = [];
                         bloqueo = false;
-                    }, 500);
+                        actualizarEstadoLocalStorage();
+                    }, 800);
                 }
             }
         }
@@ -114,17 +146,37 @@ function manejadorClicks() {
 }
 
 function inicializarJuego() {
-    segundosTranscurridos = 0;
-    mostrarTiempo(); // Mostrar 00:00 antes de empezar
+    // Leer estado previo si existe
+    const estado = leerEstadoJuego();
+    segundosTranscurridos = estado ? estado.segundosTranscurridos : 0;
+    mostrarTiempo();
     const numColores = 15;
     const numCajas = 30;
-    const colores = prepararColores(numCajas, numColores);
-    asignarColoresCajas(cajas, colores);
-    const manejadorClick = manejadorClicks();
+    const colores = prepararColores(numCajas, numColores, estado ? estado.colores : null);
+
+    asignarColoresCajas(cajas, colores, estado ? estado.parejasEncontradas : []);
+    const manejadorClick = manejadorClickFactory(cajas, colores, estado, numCajas / 2);
     for (const caja of cajas) {
+        // Limpiar listeners previos si los hay
+        caja.onclick = null;
         caja.addEventListener('click', manejadorClick);
+    }
+    // Si el temporizador estaba activo antes, lo retomamos
+    if (estado && estado.primerClickHecho && !estado.completado) {
+        temporizadorActivo = true;
+        intervalo = setInterval(() => {
+            if (temporizadorActivo) {
+                segundosTranscurridos += 1;
+                mostrarTiempo();
+                guardarEstadoJuego({
+                    colores,
+                    parejasEncontradas: estado.parejasEncontradas || [],
+                    segundosTranscurridos,
+                    primerClickHecho: true
+                });
+            }
+        }, 1000);
     }
 }
 
 inicializarJuego();
-
