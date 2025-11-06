@@ -1,0 +1,15 @@
+.totalCajas{
+    display: grid;
+    grid-template-columns: repeat(6,1fr);
+    grid-template-rows: repeat(5,1fr);
+    gap: 5px;
+    background-color: lightgray;
+    justify-items: center;
+}
+
+.totalCajas div{
+    background-color: black;
+    width: 80px;
+    height: 80px;
+    border: 1px solid black;
+}

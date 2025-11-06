@@ -14,7 +14,8 @@
 @use 'layout/header';
 
 // 4. Components
-@use 'components/button';
+@use 'components/boxes';
+@use 'components/buttons';
 
 // 5. Pages
 @use 'pages/home';
